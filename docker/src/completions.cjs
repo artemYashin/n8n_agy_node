@@ -1,6 +1,8 @@
 const { randomUUID } = require('node:crypto');
 const Ajv = require('ajv');
-const ajv = new Ajv({ strict: false, allErrors: false });
+const ajv = new Ajv({ strict: false, allErrors: false, addUsedSchema: false });
+const Ajv2020 = require('ajv/dist/2020');
+const ajv2020 = new Ajv2020({ strict: false, allErrors: false, addUsedSchema: false });
 
 class ApiError extends Error {
   constructor(status, message, param = null, code = 'invalid_request') {
@@ -49,7 +51,10 @@ function validate(body) {
     if (!object(tool) || tool.type !== 'function' || !object(tool.function) || !/^[a-zA-Z0-9_-]{1,64}$/.test(tool.function.name)) invalid('Only named function tools are supported.', 'tools');
     if (validators.has(tool.function.name)) invalid('Tool names must be unique.', 'tools');
     const schema = tool.function.parameters || { type: 'object', properties: {} };
-    try { validators.set(tool.function.name, ajv.compile(schema)); } catch { invalid('Invalid tool JSON schema.', 'tools'); }
+    try {
+      const compiler = schema?.$schema === 'https://json-schema.org/draft/2020-12/schema' ? ajv2020 : ajv;
+      validators.set(tool.function.name, compiler.compile(schema));
+    } catch { invalid('Invalid tool JSON schema.', 'tools'); }
     return tool;
   });
   const choice = body.tool_choice ?? (tools.length ? 'auto' : 'none');

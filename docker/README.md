@@ -172,3 +172,23 @@ curl http://localhost:44455/v1/images/generations \
 1. Импортируйте [telegram-image-tool.json](examples/telegram-image-tool.json), задайте URL сервера и credentials HTTP Header Auth/Telegram.
 2. Импортируйте [telegram-image-agent.json](examples/telegram-image-agent.json), подключите Telegram/OpenAI credentials и выберите первый workflow в tool.
 3. Получатель берётся из Telegram Trigger; AI задаёт только prompt. В модель возвращается только подтверждение доставки, не base64 изображения.
+
+## OpenCode 1.x
+
+Готовый config: [examples/opencode.json](examples/opencode.json). Формат проверен установленным OpenCode 1.18.34. Он использует `@ai-sdk/openai-compatible` и Chat Completions, как описано в [официальной документации OpenCode](https://opencode.ai/docs/providers).
+
+1. Обновите сервер (`git pull`, затем из `docker` — `docker compose up -d --build`): OpenCode использует tool schemas JSON Schema 2020-12, поддержка которых добавлена в этой версии.
+2. Скопируйте `docker/examples/opencode.json` в корень проекта, где запускаете OpenCode, под именем `opencode.json`. Если config уже есть, объедините раздел `provider.agy` и настройки моделей с существующим файлом.
+3. В config замените `provider.agy.options.baseURL`, если адрес сервера отличается от `http://192.168.1.100:44455/v1`.
+4. В терминале, из которого запускаете OpenCode:
+
+```sh
+export AGY_API_KEY='ключ-нашего-Docker-API'
+opencode
+```
+
+Через `/models` доступны четыре модели Agy: Gemini 3.8 Flash, Gemini 4 Argon, Claude Sonnet 5.5 и Claude Opus 5.5 (варианты medium). Наличие зависит от аккаунта; при необходимости измените IDs по ответу `/v1/models`.
+
+В `options` каждой модели намеренно стоят `null` для `max_tokens`, `max_completion_tokens`, `temperature`, `top_p` и penalties: это нейтрализует автоматически добавляемые OpenCode настройки, которыми Agy CLI не умеет управлять. Не удаляйте эти overrides. OpenCode передаёт свои системные инструкции через API; настройки инструментов и разрешений остаются под контролем OpenCode. Эта конфигурация предназначена для текстовых запросов и tool calling; image endpoint не подключается автоматически.
+
+Проверка совместимости: настоящий OpenCode 1.18.34 подключён к локальному HTTP-серверу с тестовым backend и успешно получил ответ с включёнными coding tools. Это проверяет формат запросов/ответов, а не качество реального выполнения coding-задач. Для OpenCode 2.x используется другой формат конфигурации (`providers`/`package`/`settings`).

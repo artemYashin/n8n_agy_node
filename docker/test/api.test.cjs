@@ -85,3 +85,12 @@ test('Responses API reports the exact n8n setting to change',async t=>{
  const response=await fetch(base+'/v1/responses',{method:'POST',headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},body:'{}'});
  assert.equal(response.status,400);const data=await response.json();assert.equal(data.error.code,'unsupported_endpoint');assert.match(data.error.message,/turn off Use Responses API/);
 });
+
+test('OpenCode 2020-12 schemas validate arguments, including prefixItems',async t=>{
+ let args={values:['ok']};
+ const {post}=await fixture(t,async()=>result(JSON.stringify({content:'',tool_calls:[{name:'sample',arguments:args}]})));
+ const tools=[{type:'function',function:{name:'sample',parameters:{$schema:'https://json-schema.org/draft/2020-12/schema',type:'object',properties:{values:{type:'array',prefixItems:[{type:'string'}],items:false,minItems:1}},required:['values']}}}];
+ assert.equal((await post({...request,tools})).status,200);
+ args={values:[123]};assert.equal((await post({...request,tools})).status,502);
+ args={values:['ok','extra']};assert.equal((await post({...request,tools})).status,502);
+});

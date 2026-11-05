@@ -1,0 +1,102 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "agy/gemini-3.8-flash-medium",
+  "small_model": "agy/gemini-3.8-flash-medium",
+  "provider": {
+    "agy": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Agy API",
+      "options": {
+        "baseURL": "http://192.168.1.100:44455/v1",
+        "apiKey": "{env:AGY_API_KEY}",
+        "timeout": 300000
+      },
+      "models": {
+        "gemini-3.8-flash-medium": {
+          "name": "Gemini 3.8 Flash",
+          "temperature": false,
+          "tool_call": true,
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "max_tokens": null,
+            "max_completion_tokens": null,
+            "temperature": null,
+            "top_p": null,
+            "frequency_penalty": null,
+            "presence_penalty": null
+          }
+        },
+        "gemini-4-argon-medium": {
+          "name": "Gemini 4 Argon",
+          "temperature": false,
+          "tool_call": true,
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "max_tokens": null,
+            "max_completion_tokens": null,
+            "temperature": null,
+            "top_p": null,
+            "frequency_penalty": null,
+            "presence_penalty": null
+          }
+        },
+        "claude-sonnet-5-5-medium": {
+          "name": "Claude Sonnet 5.5",
+          "temperature": false,
+          "tool_call": true,
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "max_tokens": null,
+            "max_completion_tokens": null,
+            "temperature": null,
+            "top_p": null,
+            "frequency_penalty": null,
+            "presence_penalty": null
+          }
+        },
+        "claude-opus-5-5-medium": {
+          "name": "Claude Opus 5.5",
+          "temperature": false,
+          "tool_call": true,
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "max_tokens": null,
+            "max_completion_tokens": null,
+            "temperature": null,
+            "top_p": null,
+            "frequency_penalty": null,
+            "presence_penalty": null
+          }
+        }
+      }
+    }
+  }
+}
