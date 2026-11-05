@@ -192,3 +192,25 @@ opencode
 В `options` каждой модели намеренно стоят `null` для `max_tokens`, `max_completion_tokens`, `temperature`, `top_p` и penalties: это нейтрализует автоматически добавляемые OpenCode настройки, которыми Agy CLI не умеет управлять. Не удаляйте эти overrides. OpenCode передаёт свои системные инструкции через API; настройки инструментов и разрешений остаются под контролем OpenCode. Эта конфигурация предназначена для текстовых запросов и tool calling; image endpoint не подключается автоматически.
 
 Проверка совместимости: настоящий OpenCode 1.18.34 подключён к локальному HTTP-серверу с тестовым backend и успешно получил ответ с включёнными coding tools. Это проверяет формат запросов/ответов, а не качество реального выполнения coding-задач. Для OpenCode 2.x используется другой формат конфигурации (`providers`/`package`/`settings`).
+
+### Автоматический список моделей OpenCode
+
+OpenCode 1.x можно расширить локальным startup-плагином. Готовый файл: [agy-models.js](examples/opencode-plugins/agy-models.js).
+
+Скопируйте его в проект, где уже лежит `opencode.json`:
+
+```sh
+mkdir -p /path/to/your/project/.opencode/plugins
+cp docker/examples/opencode-plugins/agy-models.js /path/to/your/project/.opencode/plugins/agy-models.js
+```
+
+Затем запустите OpenCode из этого проекта с `AGY_API_KEY` в окружении. Плагин автоматически читает `provider.agy.options.baseURL`, запрашивает `/models` (то есть `/v1/models` при Base URL с `/v1`) и заполняет список всех доступных chat-моделей. Каждая модель получает необходимые null-overrides для неподдерживаемых CLI параметров. Статический список из config можно оставить как fallback.
+
+- Список обновляется при старте OpenCode, а не при каждом запросе. После смены аккаунта перезапустите OpenCode и откройте `/models`.
+- Если fetch не удался (timeout 15 секунд, неверный ключ, недоступность сервера), сохраняется статический список config; причина без ключа/response body пишется в журнал OpenCode.
+- Новые модели добавляются, пропавшие удаляются из runtime-конфигурации. Если выбранный default Agy исчез, используется `agy-default` или первая доступная модель. Другие providers не меняются.
+- Config на диске и ключи не перезаписываются. Используйте `AGY_API_KEY` или `provider.agy.options.apiKey`; auth из `/connect` этот плагин отдельно не читает.
+- `--pure` отключает внешние плагины: запускайте OpenCode без него для discovery.
+- Проверено реальным OpenCode 1.18.34: обнаружена и выбрана модель, которой не было в статическом config. Backend генерации в этом тесте был тестовым.
+
+Если OpenCode пишет **Invalid tool JSON schema**, сначала обновите и пересоберите API-сервер: поддержка OpenCode JSON Schema 2020-12 добавлена в commit `c29ef50`. Копирование config или плагина без обновления контейнера не обновляет API.
