@@ -6,8 +6,8 @@ Use your installed and authenticated **Antigravity CLI (`agy`) as an n8n LLM pro
 
 - Self-hosted n8n with community/custom node support; this cannot run on n8n Cloud.
 - Node.js 22 or later, and a recent n8n using LangChain Core 1.x. Development uses `n8n-workflow` 2.16.0 and `@langchain/core` 1.2.8.
-- `agy` installed and authenticated **as the operating-system user running n8n**. Run `agy models` under that user to check access.
-- The CLI must support custom Markdown agents and `--input-format stream-json`.
+- `agy` installed **as the operating-system user running n8n**. Sign in from n8n using the setup flow below, or reuse an existing CLI login.
+- The CLI must support custom Markdown agents and `--input-format stream-json`; UI sign-in also requires `agy acp --login` (tested with Agy 1.5.1).
 
 In Docker, install/authenticate `agy` inside the container or provide its executable and authentication environment there. A CLI installed only on the Docker host is not accessible automatically. Queue-mode workers also need the CLI and its authentication.
 
@@ -38,6 +38,24 @@ Restart n8n, add an **AI Agent**, and select **Agy Chat Model** on its Chat Mode
 Set **Model** to an ID returned by `agy models`, or leave it empty for the CLI default. If n8n cannot find the executable, set **Options → CLI Executable** to its absolute path (for example `/home/artem/.local/bin/agy`). This field takes an executable, not a shell command.
 
 The [example workflow](examples/agy-agent.json) connects a Manual Trigger, AI Agent, Agy Chat Model, and Calculator. Import it after installing the package. Node versions may need adjustment for your n8n release.
+
+## Sign in inside n8n
+
+No terminal login is needed. The CLI executable must already be installed; this package does not bundle or download it.
+
+1. Add a **Manual Trigger → Agy Account** setup workflow, or import [agy-sign-in.json](examples/agy-sign-in.json).
+2. On **Agy Account**, create an **Agy CLI Account** credential. Set its **CLI Executable** to `agy` or its absolute path. Leave **One-Time Authorization Code** empty and save.
+3. Select **Start Sign-In** and execute the setup node manually. Open the `authorizationUrl` from the output in your browser.
+4. Sign in to Google. Copy the authorization code or full callback-page URL that Google returns.
+5. Edit the same credential, paste the value into **One-Time Authorization Code**, and save. Select **Complete Sign-In** and execute the node again within ten minutes. Do not rerun Start Sign-In: doing so invalidates the previous attempt.
+6. After the output says `signedIn`, clear the one-time code from the credential and save. Use **Check Connection** to list the available models.
+7. In **Agy Chat Model**, choose **Authentication → Agy CLI Account** and select that credential. Its executable path overrides **Options → CLI Executable**. Set system instructions on your parent AI Agent as usual.
+
+**Cancel Sign-In** cancels only a pending attempt; it does not log out the current account. Authentication errors omit raw CLI output so codes and tokens are not returned in execution results. The one-time code is stored in n8n's encrypted credential store, never as a node parameter. Agy handles PKCE, the exchange, and storage/refresh of the actual login session using its own credential store. The adapter never reads or exports those tokens.
+
+**Account scope:** this connects the **shared Agy account of the n8n operating-system user**. Multiple Agy CLI Account credentials do not isolate Google accounts, and signing in with another Google account changes the identity used by other workflows on that host. Use separate n8n/CLI environments for account isolation. Setup is intended for trusted instance administrators; the node only permits manual executions and serializes pending sign-ins within its process.
+
+**Deployment:** the pending login lives in memory. Start and Complete must execute in the **same n8n process**; a restart or a different worker loses the attempt. Perform setup with one execution process, not a load-balanced worker pool. Workers need the authenticated CLI environment too. Persist Agy's credential storage across container replacement. This flow does not add a public callback endpoint or require an inbound port.
 
 ## System prompts and tools
 
@@ -77,6 +95,6 @@ npm run test:live # Uses real agy and account quota: system prompt + tool-call c
 
 Optional live-test environment variables: `AGY_EXECUTABLE`, `AGY_MODEL`.
 
-Tests cover roles and Unicode, shell metacharacters, tool binding/results, usage, concurrent isolation, unsupported media, errors, output limits, cancellation, and deadlines. Full installation in a running n8n UI is a separate deployment check.
+Tests cover roles and Unicode, shell metacharacters, tool binding/results, usage, concurrent isolation, unsupported media, errors, output limits, cancellation, deadlines, sign-in ownership, expiry, secret redaction, and the setup node's operation sequence. Live checks verified a real Google authorization link and the existing account's model access; completing a new Google consent flow and installation in a running n8n UI remain deployment checks.
 
 References: [Agy headless protocol](https://antigravity.google/docs/cli/headless/), [custom agent format](https://antigravity.google/docs/subagents?tab=cli), [n8n chat-model node pattern](https://github.com/n8n-io/n8n/blob/master/packages/%40n8n/nodes-langchain/nodes/llms/LMChatOllama/LmChatOllama.node.ts).

@@ -8,12 +8,16 @@ export class AgyChatModel implements INodeType {
     description: 'Use the locally authenticated agy CLI as a chat model',
     defaults: { name: 'Agy Chat Model' },
     inputs: [], outputs: [NodeConnectionTypes.AiLanguageModel], outputNames: ['Model'],
+    credentials: [{ name: 'agyCliAccount', required: true, displayOptions: { show: { authentication: ['account'] } } }],
     codex: { categories: ['AI'], subcategories: { AI: ['Language Models'] } },
     properties: [
       {
-        displayName: 'Requires self-hosted n8n with agy installed and authenticated as the n8n service user. Connect this node to an AI Agent or LLM Chain’s Model input.',
+        displayName: 'Requires self-hosted n8n with agy installed. Use the Agy Account node to sign in from n8n, or reuse the server’s existing CLI login. Connect to an AI Agent or LLM Chain’s Model input.',
         name: 'notice', type: 'notice', default: '',
       },
+      { displayName: 'Authentication', name: 'authentication', type: 'options', default: 'existing',
+        options: [{ name: 'Existing Server Login', value: 'existing' }, { name: 'Agy CLI Account', value: 'account' }],
+        description: 'Both modes use the server’s shared Agy session. The credential supplies the executable used during sign-in.' },
       {
         displayName: 'Model', name: 'model', type: 'string', default: '',
         placeholder: 'gemini-3.8-flash-medium',
@@ -43,8 +47,10 @@ export class AgyChatModel implements INodeType {
     const options = this.getNodeParameter('options', itemIndex, {}) as {
       executable?: string; effort?: string; timeout?: number; maxOutput?: number;
     };
+    const authentication = this.getNodeParameter('authentication', itemIndex, 'existing') as string;
+    const credential = authentication === 'account' ? await this.getCredentials('agyCliAccount') : undefined;
     return { response: new ChatModel({
-      model, executable: options.executable, effort: options.effort,
+      model, executable: credential ? String(credential.executable || 'agy') : options.executable, effort: options.effort,
       timeoutMs: (options.timeout ?? 120) * 1000,
       maxOutputBytes: (options.maxOutput ?? 16) * 1024 * 1024,
     }) };

@@ -18,7 +18,8 @@
   "engines": { "node": ">=22" },
   "n8n": {
     "n8nNodesApiVersion": 1,
-    "nodes": ["dist/nodes/AgyChatModel/AgyChatModel.node.js"]
+    "credentials": ["dist/credentials/AgyCliAccount.credentials.js"],
+    "nodes": ["dist/nodes/AgyChatModel/AgyChatModel.node.js", "dist/nodes/AgyAccount/AgyAccount.node.js"]
   },
   "dependencies": { "@langchain/core": "1.2.8" },
   "peerDependencies": { "n8n-workflow": "*" },
