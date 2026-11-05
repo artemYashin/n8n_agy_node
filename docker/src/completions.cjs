@@ -82,17 +82,27 @@ function stopFilter(stops, emit) {
 
 async function generate(input, backend, options, signal, onText) {
   const { body, messages, tools, validators, choice, named, stop, json } = input;
-  let system = `You supply the next assistant message for a chat-completions API. Continue the supplied JSON conversation according to its roles. Do not describe the transcript. Do not use Antigravity tools, browse, inspect files, or run commands. Never invent tool results. Only request client tools through the response format below; the client executes them.`;
-  system += '\n\n' + messages.filter(m => ['system','developer'].includes(m.role)).map(m => m.content).join('\n\n');
-  if (tools.length) system += `\nAvailable tools: ${JSON.stringify(tools)}\nReturn exactly one JSON object: {"content":"assistant text or empty string","tool_calls":[{"name":"tool_name","arguments":{}}]}. Return tool_calls: [] for a final answer. Do not include id, type or function wrappers. Never execute tools yourself. tool_choice=${JSON.stringify(choice)}. ${choice === 'required' ? 'You MUST request at least one tool.' : ''} ${named ? `You MUST request ${named}.` : ''} ${body.parallel_tool_calls === false ? 'Request at most one tool.' : ''} No Markdown or extra text.`;
-  else if (json) system += '\nReturn exactly one valid JSON object without Markdown fences.';
+  const system = messages.filter(m => ['system','developer'].includes(m.role)).map(m => m.content).join('\n\n');
+  const conversation = messages.filter(m => !['system','developer'].includes(m.role));
+  // A single user message is passed unchanged. History is serialized because
+  // the CLI accepts one user turn, not an OpenAI messages array.
+  let prompt = conversation.length === 1 && conversation[0].role === 'user'
+    ? conversation[0].content : JSON.stringify({ messages: conversation });
+  // Optional API formats are transport instructions in the user input, never
+  // additions to the caller's system prompt.
+  if (tools.length) prompt = JSON.stringify({ messages: conversation, tools, tool_choice: choice,
+    parallel_tool_calls: body.parallel_tool_calls ?? true,
+    response_format: { content: 'string', tool_calls: [{ name: 'tool name', arguments: 'JSON object matching tool parameters' }] },
+    format_instructions: 'Return exactly one JSON object with content and tool_calls. For a final answer use an empty tool_calls array. Request tools through this object; the client executes them. Follow tool_choice and parallel_tool_calls. No Markdown fences.',
+  });
+  else if (json) prompt = JSON.stringify({ messages: conversation, response_format: { type: 'json_object' } });
   let emitted = '', sawDelta = false;
   const live = Boolean(onText && !tools.length && !json);
   const filter = stopFilter(stop, delta => { emitted += delta; onText?.(delta); });
   const result = await backend.runAgy({ executable: options.executable, model: body.model === 'agy-default' ? options.defaultModel : body.model,
     effort: body.reasoning_effort, timeoutMs: options.timeoutMs, maxOutputBytes: 16 * 1024 * 1024,
     onText: live ? delta => { sawDelta = true; filter.write(delta); } : undefined,
-  }, JSON.stringify({ messages: messages.filter(m => !['system','developer'].includes(m.role)) }), system, signal);
+  }, prompt, system, signal);
   let content = result.response;
   if (typeof content !== 'string') throw new ApiError(502, 'Agy returned an invalid response.', null, 'upstream_error');
   const tool_calls = [];

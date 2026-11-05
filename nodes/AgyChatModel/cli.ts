@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveExecutable, launchError } from '../shared/runtime.js';
+import { verificationError } from '../shared/verification.js';
 
 export interface CliOptions {
   executable?: string;
@@ -57,6 +58,7 @@ export async function runAgy(
       });
       let pending = '';
       let stderr = '';
+      let diagnostics = '';
       let bytes = 0;
       let result: AgyResult | undefined;
       let failure: Error | undefined;
@@ -75,6 +77,7 @@ export async function runAgy(
         if (!line.trim() || failure) return;
         try {
           const event = JSON.parse(line);
+          if (event.event === 'error' || event.error) diagnostics = (diagnostics + JSON.stringify(event)).slice(-32768);
           if (event.event === 'step_update' && event.step_update?.step_type === 'agent_response' && typeof event.step_update.text_delta === 'string') {
             options.onText?.(event.step_update.text_delta);
           }
@@ -82,7 +85,7 @@ export async function runAgy(
             if (result) throw new Error('Multiple result events');
             result = event.result;
           }
-        } catch { fail(new Error('Agy emitted invalid or unexpected JSON output')); }
+        } catch { diagnostics = (diagnostics + line).slice(-32768); fail(new Error('Agy emitted invalid or unexpected JSON output')); }
       };
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', (chunk: string) => {
@@ -103,7 +106,7 @@ export async function runAgy(
         }
       });
       child.stderr.setEncoding('utf8');
-      child.stderr.on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-4000); });
+      child.stderr.on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-32768); });
       child.on('error', (error) => { failure = new Error(`Cannot start agy: ${launchError(error)}`); });
       child.stdin.on('error', (error: NodeJS.ErrnoException) => {
         if (error.code !== 'EPIPE') fail(error);
@@ -112,6 +115,10 @@ export async function runAgy(
         clearTimeout(timer);
         signal?.removeEventListener('abort', abort);
         parseLine(pending);
+        if (failure || code !== 0 || !result || result.status !== 'SUCCESS') {
+          const verification = verificationError(stderr + '\n' + diagnostics + '\n' + JSON.stringify(result?.error || ''));
+          if (verification) return reject(verification);
+        }
         if (failure) return reject(failure);
         if (code !== 0 || !result || result.status !== 'SUCCESS') {
           return reject(new Error(`Agy failed (exit ${code}): ${result?.error || stderr.trim() || result?.status || 'missing result'}`));

@@ -8,6 +8,14 @@ process.stdin.on('end', () => {
   const event = JSON.parse(input);
   const prompt = event.message.content;
   const model = process.argv.find((arg) => arg.startsWith('--model='))?.slice(8);
+  if (model === 'verification-stderr') {
+    console.error('SECRET diagnostic: To continue, verify your account at https://accounts.google.com/verify?challenge=test');
+    process.exitCode = 1; return;
+  }
+  if (model === 'verification-result') {
+    console.log(JSON.stringify({ event: 'result', result: { status: 'ERROR', error: { reason: 'VALIDATION_REQUIRED', metadata: { verification_url: 'https://accounts.google.com/verify?challenge=test' } } } }));
+    return;
+  }
   if (model === 'live-stream') {
     console.log(JSON.stringify({ event: 'step_update', step_update: { step_type: 'agent_response', text_delta: 'Hello 🌍' } }));
     setTimeout(() => console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Hello 🌍' } })), 100);

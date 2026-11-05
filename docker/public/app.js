@@ -1,12 +1,30 @@
 const el = id => document.getElementById(id);
 let request;
+function showVerification(error) {
+  const needed = error?.code === 'account_verification_required';
+  el('verification').hidden = !needed;
+  const link = el('verification-link'); link.hidden = true; link.removeAttribute('href');
+  if (!needed) return;
+  el('status').textContent = 'Требуется проверка аккаунта';
+  el('verification-message').textContent = error.message;
+  try {
+    const url = new URL(error.verification_url);
+    if (url.protocol === 'https:' && ['accounts.google.com', 'myaccount.google.com'].includes(url.hostname) && !url.username && !url.password && !url.port) {
+      link.href = url.href; link.hidden = false;
+    }
+  } catch { /* A verification error may have no usable link. */ }
+}
+function apiError(error) {
+  if (error?.code === 'account_verification_required') showVerification(error);
+  return new Error(error?.message || 'Request failed');
+}
 el('base-url').textContent = location.origin + '/v1';
 async function api(route, body) {
   const key = el('key').value.trim();
   if (!key) throw new Error('Введите API-ключ сервера.');
   const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${key}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
+  if (!response.ok) throw apiError(data.error);
   return data;
 }
 function action(id, fn) {
@@ -16,6 +34,7 @@ action('check', async () => {
   const status = await api('/admin/status');
   el('connection').textContent = status.authenticated ? 'Google подключён. Модели доступны.' : status.message;
   el('status').textContent = status.authenticated ? 'Аккаунт подключён' : 'Требуется вход';
+  showVerification(status.verification);
 });
 action('start', async () => {
   const data = await api('/admin/login/start', {});
@@ -38,8 +57,8 @@ action('send', async () => {
   try {
     const response = await fetch('/v1/chat/completions', { method: 'POST', signal: request.signal,
       headers: { Authorization: `Bearer ${el('key').value.trim()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: el('model').value, stream: true, messages: [{ role: 'user', content: el('prompt').value }] }) });
-    if (!response.ok) throw new Error((await response.json()).error.message);
+      body: JSON.stringify({ model: el('model').value, stream: true, messages: [...(el('system-prompt').value ? [{ role: 'system', content: el('system-prompt').value }] : []), { role: 'user', content: el('prompt').value }] }) });
+    if (!response.ok) throw apiError((await response.json()).error);
     const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
     for (;;) {
       const { done, value } = await reader.read(); if (done) break;
@@ -49,11 +68,12 @@ action('send', async () => {
         const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
         for (const line of frame.split('\n')) {
           if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-          const data = JSON.parse(line.slice(6)); if (data.error) throw new Error(data.error.message);
+          const data = JSON.parse(line.slice(6)); if (data.error) throw apiError(data.error);
           el('answer').textContent += data.choices?.[0]?.delta?.content || '';
         }
       }
     }
+    showVerification(null);
   } catch (e) { if (e.name !== 'AbortError') throw e; }
   finally { request = undefined; }
 });

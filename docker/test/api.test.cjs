@@ -51,3 +51,37 @@ test('queue saturation and timeout abort',async t=>{
  const {post}=await fixture(t,async(o,p,s,signal)=>{entered();await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>{aborted=true;reject(signal.reason);},{once:true}));},{concurrency:1,maxQueue:0,timeoutMs:250});
  const first=post(request);await started;assert.equal((await post(request)).status,429);assert.equal((await first).status,504);assert.equal(aborted,true);
 });
+
+test('only caller system/developer instructions reach the system prompt',async t=>{
+ const captured=[];
+ const {post}=await fixture(t,async(o,p,s)=>{captured.push({prompt:p,system:s});return result('ok');});
+ await post(request);
+ assert.deepEqual(captured[0],{prompt:'Hello',system:''});
+ await post({...request,messages:[{role:'system',content:'My exact instructions.'},{role:'developer',content:'Use Russian.'},...request.messages]});
+ assert.equal(captured[1].system,'My exact instructions.\n\nUse Russian.');
+ await post({...request,response_format:{type:'json_object'},messages:[{role:'system',content:'Only mine.'},...request.messages]});
+ assert.equal(captured[2].system,'Only mine.');
+});
+test('verification failures expose safe links in HTTP, SSE and authenticated setup status',async t=>{
+ let fail=true;
+ const url='https://accounts.google.com/verify?challenge=test';
+ const {base,post}=await fixture(t,async()=>{if(fail)throw Error('SECRET diagnostic: VALIDATION_REQUIRED verify your account '+url);return result('ok');});
+ const response=await post(request);assert.equal(response.status,403);
+ const data=await response.json();assert.equal(data.error.code,'account_verification_required');assert.equal(data.error.verification_url,url);assert.ok(!JSON.stringify(data).includes('SECRET'));
+ const status=await fetch(base+'/admin/status',{headers:{authorization:`Bearer ${key}`}}).then(r=>r.json());
+ assert.equal(status.authenticated,true);assert.equal(status.verification.verification_url,url);
+ assert.equal((await fetch(base+'/admin/status')).status,401);
+ const stream=await post({...request,stream:true});const events=await stream.text();assert.match(events,/account_verification_required/);assert.match(events,/data: \[DONE\]/);
+ fail=false;await post(request);
+ const cleared=await fetch(base+'/admin/status',{headers:{authorization:`Bearer ${key}`}}).then(r=>r.json());assert.equal(cleared.verification,null);
+});
+test('verification without a trusted URL remains actionable without exposing diagnostics',async t=>{
+ const {post}=await fixture(t,async()=>{throw Error('verify your account https://accounts.google.com.evil.example/secret SECRET');});
+ const response=await post(request);assert.equal(response.status,403);const data=await response.json();assert.equal(data.error.verification_url,undefined);assert.ok(!JSON.stringify(data).includes('SECRET'));
+});
+
+test('Responses API reports the exact n8n setting to change',async t=>{
+ const {base}=await fixture(t,async()=>result('unused'));
+ const response=await fetch(base+'/v1/responses',{method:'POST',headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},body:'{}'});
+ assert.equal(response.status,400);const data=await response.json();assert.equal(data.error.code,'unsupported_endpoint');assert.match(data.error.message,/turn off Use Responses API/);
+});

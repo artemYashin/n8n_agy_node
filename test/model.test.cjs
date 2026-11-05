@@ -99,3 +99,14 @@ test('concurrent requests have independent workspaces and system prompts', async
   assert.equal(first.prompt.messages[0].content, 'first');
   assert.equal(second.prompt.messages[0].content, 'second');
 });
+
+test('verification failures from CLI stderr and result become safe typed errors', async () => {
+  for (const model of ['verification-stderr', 'verification-result']) {
+    await assert.rejects(runAgy({ executable, model }, '{}', ''), error => {
+      assert.equal(error.code, 'account_verification_required');
+      assert.equal(error.verification_url, 'https://accounts.google.com/verify?challenge=test');
+      assert.ok(!error.message.includes('SECRET'));
+      return true;
+    });
+  }
+});

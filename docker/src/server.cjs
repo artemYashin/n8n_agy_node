@@ -38,7 +38,7 @@ function readJson(req, max = 1024 * 1024) {
 const hash = value => createHash('sha256').update(value).digest();
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(data)); };
 function errorEnvelope(error) {
-  return { error: { message: error.message, type: error.status < 500 ? 'invalid_request_error' : 'server_error', param: error.param || null, code: error.code || 'server_error' } };
+  return { error: { message: error.message, type: error.status < 500 ? 'invalid_request_error' : 'server_error', param: error.param || null, code: error.code || 'server_error', ...(error.verification_url ? { verification_url: error.verification_url } : {}) } };
 }
 
 function createApp(config = {}) {
@@ -48,6 +48,8 @@ function createApp(config = {}) {
   const options = { executable: config.executable || 'auto', defaultModel: config.defaultModel || '', timeoutMs: config.timeoutMs || 180000 };
   const queue = new Queue(config.concurrency || 2, config.maxQueue ?? 16);
   const controllers = new Set();
+  let verification;
+  const verificationStatus = () => verification && verification.expires > Date.now() ? verification.error : null;
   const publicDir = config.publicDir || process.env.AGY_PUBLIC_DIR || path.join(__dirname, '../public');
   const server = http.createServer(async (req, res) => {
     const requestId = `req_${randomUUID()}`;
@@ -66,13 +68,14 @@ function createApp(config = {}) {
         res.writeHead(200, { 'content-type': type + '; charset=utf-8', 'cache-control': 'no-store' }); return res.end(content);
       }
       if (typeof req.headers.authorization !== 'string' || !timingSafeEqual(hash(req.headers.authorization), hash(`Bearer ${key}`))) throw new ApiError(401, 'Invalid or missing API key.', null, 'invalid_api_key');
+      if (pathname === '/v1/responses' || pathname.startsWith('/v1/responses/')) throw new ApiError(400, 'Responses API is not supported. In n8n OpenAI Chat Model, turn off Use Responses API. Use /v1/chat/completions instead.', null, 'unsupported_endpoint');
       if (req.method === 'GET' && pathname === '/v1/models') {
         const models = await backend.listModels(options.executable);
         return json(res, 200, { object: 'list', data: [{ id: 'agy-default', name: 'Agy default', object: 'model', created: 0, owned_by: 'agy' }, ...models.map(m => ({ id: m.value, name: m.name, object: 'model', created: 0, owned_by: 'agy' }))] });
       }
       if (req.method === 'GET' && pathname === '/admin/status') {
-        try { const models = await backend.listModels(options.executable); return json(res, 200, { authenticated: true, models, active: queue.active, queued: queue.waiting.length }); }
-        catch { return json(res, 200, { authenticated: false, message: 'Sign in with Google, or check the CLI/network connection.', active: queue.active, queued: queue.waiting.length }); }
+        try { const models = await backend.listModels(options.executable); return json(res, 200, { authenticated: true, verification: verificationStatus(), models, active: queue.active, queued: queue.waiting.length }); }
+        catch { return json(res, 200, { authenticated: false, verification: verificationStatus(), message: 'Sign in with Google, or check the CLI/network connection.', active: queue.active, queued: queue.waiting.length }); }
       }
       if (req.method === 'POST' && pathname.startsWith('/admin/')) {
         const body = await readJson(req, 16384);
@@ -102,6 +105,7 @@ function createApp(config = {}) {
       }
       try {
         const result = await generate(input, backend, options, controller.signal, input.body.stream ? delta => chunk({ content: delta }) : undefined);
+        verification = undefined;
         if (input.body.stream) {
           if (!result.live && result.message.content) chunk({ content: result.message.content });
           if (result.message.tool_calls) chunk({ tool_calls: result.message.tool_calls.map((call, index) => ({ index, ...call })) });
@@ -112,6 +116,17 @@ function createApp(config = {}) {
       } finally { clearInterval(heartbeat); }
     } catch (caught) {
       let error = controller?.signal.aborted ? controller.signal.reason : caught;
+      if (!(error instanceof ApiError)) {
+        const detected = bridge.verificationError(error?.message || '');
+        const source = error?.code === 'account_verification_required' ? error : detected;
+        if (source) {
+          // Revalidate the URL even when supplied by an alternate backend.
+          const safe = bridge.verificationError('VALIDATION_REQUIRED ' + (source.verification_url || ''));
+          error = new ApiError(403, 'Google account verification is required. Open the verification link in the setup page, complete verification, then retry. If no link is available, run Agy directly to obtain it.', null, 'account_verification_required');
+          if (safe?.verification_url) error.verification_url = safe.verification_url;
+          verification = { error: errorEnvelope(error).error, expires: Date.now() + 10 * 60_000 };
+        }
+      }
       if (!(error instanceof ApiError)) {
         // CLI diagnostics can contain auth links or prompt data. Never expose them.
         console.error(`[${requestId}] Agy operation failed`);
