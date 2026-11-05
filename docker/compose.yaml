@@ -14,9 +14,9 @@ services:
       AGY_CLI_CACHE_DIR: /home/node/.n8n/agy-runtime
       AGY_DATA_DIR: /home/node/.agy-api
     volumes:
-      - agy-runtime:/home/node/.n8n
-      - agy-auth:/home/node/.gemini
-      - agy-api-data:/home/node/.agy-api
+      - ./data/runtime:/home/node/.n8n
+      - ./data/auth:/home/node/.gemini
+      - ./data/api:/home/node/.agy-api
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
@@ -25,7 +25,3 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 15s
-volumes:
-  agy-runtime:
-  agy-auth:
-  agy-api-data:

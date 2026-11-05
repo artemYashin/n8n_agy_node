@@ -18,7 +18,7 @@ docker compose up
 3. Нажмите вход через Google, откройте полученную ссылку и вставьте код/URL обратного перенаправления на страницу настройки.
 4. Обновите модели и отправьте пробный запрос прямо на странице.
 
-HTTP-сервер доступен сразу, но генерация требует первого входа в Google. Обойти авторизацию аккаунта автоматически нельзя. Авторизация, ключ API и CLI сохраняются в Docker volumes; после перезапуска вход повторять не нужно. Ключ этого сервера используется вместо ключа OpenAI.
+HTTP-сервер доступен сразу, но генерация требует первого входа в Google. Обойти авторизацию аккаунта автоматически нельзя. Авторизация, ключ API и CLI сохраняются в локальных папках `docker/data/auth`, `docker/data/api` и `docker/data/runtime`; после перезапуска вход повторять не нужно. Ключ этого сервера используется вместо ключа OpenAI.
 
 Получить сохранённый ключ позднее:
 
@@ -26,7 +26,22 @@ HTTP-сервер доступен сразу, но генерация треб�
 docker compose exec agy-api cat /home/node/.agy-api/api-key
 ```
 
-Фоновый запуск: `docker compose up -d`. После обновления исходников: `docker compose up -d --build`. `docker compose down` сохраняет данные; `docker compose down -v` удаляет их, включая авторизацию.
+Фоновый запуск: `docker compose up -d`. После обновления исходников: `docker compose up -d --build`. `docker compose down` и `docker compose down -v` сохраняют локальные данные. Папка `docker/data` исключена из Git и контекста сборки. При первом запуске папки создаются автоматически; entrypoint настраивает права и копирует CLI из образа, затем запускает приложение от пользователя `node` (UID 1000).
+
+### Переход с прежних named volumes
+
+Старые Docker volumes не удаляются и автоматически не мигрируются. Если уже авторизовались в предыдущей версии, перенесите данные **до запуска новой версии** (имена volumes ниже соответствуют стандартному имени Compose-проекта `docker`; при другом имени замените префикс):
+
+```sh
+docker compose down
+mkdir -p data/auth data/api data/runtime
+docker run --rm -v docker_agy-auth:/source:ro -v "$PWD/data/auth:/target" alpine sh -c 'cp -a /source/. /target/'
+docker run --rm -v docker_agy-api-data:/source:ro -v "$PWD/data/api:/target" alpine sh -c 'cp -a /source/. /target/'
+docker run --rm -v docker_agy-runtime:/source:ro -v "$PWD/data/runtime:/target" alpine sh -c 'cp -a /source/. /target/'
+docker compose up -d --build
+```
+
+Без переноса приложение создаст новый ключ API и потребует повторного входа в Google.
 
 ## Подключение
 
