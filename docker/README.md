@@ -11,10 +11,10 @@ cd docker
 docker compose up
 ```
 
-Первый запуск собирает образ и скачивает проверенный по SHA-512 Agy CLI 1.5.1. Нужен интернет. Поддерживаются Linux amd64 и arm64. После старта контейнера API и страница настройки доступны на **http://localhost:8080**. `.env` и ручная установка CLI не требуются.
+Первый запуск собирает образ и скачивает проверенный по SHA-512 Agy CLI 1.5.1. Нужен интернет. Поддерживаются Linux amd64 и arm64. После старта контейнера API и страница настройки доступны на **http://localhost:44455**. `.env` и ручная установка CLI не требуются.
 
 1. Скопируйте `Generated API key` из логов контейнера.
-2. Откройте http://localhost:8080 и вставьте ключ.
+2. Откройте http://localhost:44455 и вставьте ключ.
 3. Нажмите вход через Google, откройте полученную ссылку и вставьте код/URL обратного перенаправления на страницу настройки.
 4. Обновите модели и отправьте пробный запрос прямо на странице.
 
@@ -30,13 +30,13 @@ docker compose exec agy-api cat /home/node/.agy-api/api-key
 
 ## Подключение
 
-- Base URL: `http://localhost:8080/v1`
+- Base URL: `http://localhost:44455/v1`
 - API key: ключ из логов/файла
 - Model: `agy-default` или ID из `GET /v1/models`
 
 ```sh
 export AGY_API_KEY='ваш-ключ'
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:44455/v1/chat/completions \
   -H "Authorization: Bearer $AGY_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"model":"agy-default","stream":true,"messages":[{"role":"user","content":"Привет!"}]}'
@@ -47,7 +47,7 @@ curl http://localhost:8080/v1/chat/completions \
 ```python
 import os
 from openai import OpenAI
-client = OpenAI(base_url="http://localhost:8080/v1", api_key=os.environ["AGY_API_KEY"])
+client = OpenAI(base_url="http://localhost:44455/v1", api_key=os.environ["AGY_API_KEY"])
 for chunk in client.chat.completions.create(
     model="agy-default", messages=[{"role": "user", "content": "Привет!"}], stream=True
 ):
@@ -76,7 +76,7 @@ for chunk in client.chat.completions.create(
 
 | Переменная | По умолчанию | Назначение |
 | --- | --- | --- |
-| `PORT` | `8080` | Порт хоста |
+| `PORT` | `44455` | Порт хоста |
 | `BIND_ADDRESS` | `127.0.0.1` | `0.0.0.0` для доступа с других машин |
 | `AGY_API_KEY` | Генерируется | Собственный ключ, минимум 16 символов |
 | `AGY_DEFAULT_MODEL` | Выбор CLI | Модель для `agy-default` |
