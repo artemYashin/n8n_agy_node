@@ -131,3 +131,7 @@ Optional live-test environment variables: `AGY_EXECUTABLE`, `AGY_MODEL`.
 Tests cover roles and Unicode, shell metacharacters, tool binding/results, usage, concurrent isolation, unsupported media, errors, output limits, cancellation, deadlines, sign-in ownership, expiry, secret redaction, automatic installation, cache reuse, checksum rejection, archive filtering, and both model-selection modes. Live checks verify the downloaded Linux x64 binary; completing a new Google consent flow and installation in a running n8n UI remain deployment checks. The local Docker daemon was unavailable, so an actual container test has not been run.
 
 References: [Agy headless protocol](https://antigravity.google/docs/cli/headless/), [custom agent format](https://antigravity.google/docs/subagents?tab=cli), [n8n chat-model node pattern](https://github.com/n8n-io/n8n/blob/master/packages/%40n8n/nodes-langchain/nodes/llms/LMChatOllama/LmChatOllama.node.ts).
+
+## Standalone Docker API
+
+For an independent OpenAI-compatible HTTP API with Google sign-in UI and live text streaming, see [docker/README.md](docker/README.md). Run `docker compose up` from the `docker` directory; n8n is not required.

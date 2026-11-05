@@ -6,6 +6,17 @@ const { AgyChatModel } = require('../dist/nodes/AgyChatModel/AgyChatModel.js');
 const { runAgy } = require('../dist/nodes/AgyChatModel/cli.js');
 const { HumanMessage, SystemMessage, ToolMessage } = require('@langchain/core/messages');
 const executable = resolve(__dirname, 'fake-agy.cjs');
+test('CLI forwards text deltas before its final result', async () => {
+  let completed = false;
+  const deltas = [];
+  const result = await runAgy({ executable, model: 'live-stream', onText(delta) {
+    assert.equal(completed, false);
+    deltas.push(delta);
+  } }, '{}', '');
+  completed = true;
+  assert.deepEqual(deltas, ['Hello 🌍']);
+  assert.equal(result.response, 'Hello 🌍');
+});
 chmodSync(executable, 0o755);
 const tools = [{ type: 'function', function: { name: 'lookup_order', description: 'Look up order', parameters: {
   type: 'object', properties: { order_id: { type: 'string' } }, required: ['order_id'],

@@ -1,0 +1,31 @@
+services:
+  agy-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
+    environment:
+      AGY_API_KEY: ${AGY_API_KEY:-}
+      AGY_DEFAULT_MODEL: ${AGY_DEFAULT_MODEL:-}
+      AGY_MAX_CONCURRENCY: ${AGY_MAX_CONCURRENCY:-2}
+      AGY_MAX_QUEUE: ${AGY_MAX_QUEUE:-16}
+      AGY_REQUEST_TIMEOUT_MS: ${AGY_REQUEST_TIMEOUT_MS:-180000}
+      AGY_CLI_CACHE_DIR: /home/node/.n8n/agy-runtime
+      AGY_DATA_DIR: /home/node/.agy-api
+    volumes:
+      - agy-runtime:/home/node/.n8n
+      - agy-auth:/home/node/.gemini
+      - agy-api-data:/home/node/.agy-api
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+volumes:
+  agy-runtime:
+  agy-auth:
+  agy-api-data:

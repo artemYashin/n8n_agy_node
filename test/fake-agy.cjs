@@ -8,6 +8,11 @@ process.stdin.on('end', () => {
   const event = JSON.parse(input);
   const prompt = event.message.content;
   const model = process.argv.find((arg) => arg.startsWith('--model='))?.slice(8);
+  if (model === 'live-stream') {
+    console.log(JSON.stringify({ event: 'step_update', step_update: { step_type: 'agent_response', text_delta: 'Hello 🌍' } }));
+    setTimeout(() => console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'Hello 🌍' } })), 100);
+    return;
+  }
   if (model === 'hang') { setInterval(() => {}, 1000); return; }
   if (model === 'bad-json') { console.log('invalid json'); return; }
   if (model === 'overflow') { console.log('x'.repeat(10000)); return; }

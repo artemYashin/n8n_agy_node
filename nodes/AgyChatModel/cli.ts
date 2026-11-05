@@ -10,6 +10,7 @@ export interface CliOptions {
   effort?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  onText?: (delta: string) => void;
 }
 
 export interface AgyResult {
@@ -74,6 +75,9 @@ export async function runAgy(
         if (!line.trim() || failure) return;
         try {
           const event = JSON.parse(line);
+          if (event.event === 'step_update' && event.step_update?.step_type === 'agent_response' && typeof event.step_update.text_delta === 'string') {
+            options.onText?.(event.step_update.text_delta);
+          }
           if (event.event === 'result') {
             if (result) throw new Error('Multiple result events');
             result = event.result;
