@@ -94,3 +94,40 @@ test('OpenCode 2020-12 schemas validate arguments, including prefixItems',async 
  args={values:[123]};assert.equal((await post({...request,tools})).status,502);
  args={values:['ok','extra']};assert.equal((await post({...request,tools})).status,502);
 });
+
+const streamTools=[{type:'function',function:{name:'lookup',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}}];
+test('OpenCode-style request streams text before CLI finishes despite available tools',{timeout:5000},async t=>{
+ let finish;const gate=new Promise(resolve=>finish=resolve);t.after(()=>finish());
+ const {client}=await fixture(t,async options=>{
+  options.onText('{"content":"Early text');await gate;
+  options.onText(' and more","tool_calls":[]}');return result('{"content":"Early text and more","tool_calls":[]}');
+ });
+ const stream=await client.chat.completions.create({...request,tools:streamTools,stream:true});let content='';
+ for await(const chunk of stream){const delta=chunk.choices[0]?.delta.content;if(delta){content+=delta;finish();}}
+ assert.equal(content,'Early text and more');
+});
+test('streams prose without leaking tool argument JSON and emits validated calls only',async t=>{
+ const envelope={content:'Checking now.',tool_calls:[{name:'lookup',arguments:{query:'private tool argument'}}]};
+ const {client}=await fixture(t,async options=>{for(const char of JSON.stringify(envelope))options.onText(char);return result(JSON.stringify(envelope));});
+ const stream=await client.chat.completions.create({...request,tools:streamTools,stream:true});let content='',call,finish;
+ for await(const chunk of stream){content+=chunk.choices[0]?.delta.content||'';call=chunk.choices[0]?.delta.tool_calls?.[0]||call;finish=chunk.choices[0]?.finish_reason||finish;}
+ assert.equal(content,envelope.content);assert.equal(call.function.name,'lookup');assert.equal(JSON.parse(call.function.arguments).query,'private tool argument');assert.equal(finish,'tool_calls');
+});
+test('invalid tool arguments are never emitted, even after streaming partial text',async t=>{
+ const body=JSON.stringify({content:'Checking',tool_calls:[{name:'lookup',arguments:{query:123}}]});
+ const {post}=await fixture(t,async options=>{options.onText(body);return result(body);});
+ const response=await post({...request,tools:streamTools,stream:true});const wire=await response.text();
+ assert.match(wire,/Checking/);assert.match(wire,/upstream_error/);assert.ok(!wire.includes('"tool_calls"'));assert.match(wire,/\[DONE\]/);
+});
+test('tool text fallback, stop boundaries and inconsistent final text',async t=>{
+ let mode='fallback';
+ const {post}=await fixture(t,async options=>{
+  if(mode==='fallback')return result('{"content":"fallback","tool_calls":[]}');
+  if(mode==='stop'){options.onText('{"content":"hello ST');options.onText('OP hidden","tool_calls":[]}');return result('{"content":"hello STOP hidden","tool_calls":[]}');}
+  options.onText('{"content":"first","tool_calls":[]}');return result('{"content":"different","tool_calls":[]}');
+ });
+ const text=async body=>{const wire=await(await post(body)).text();return {wire,content:wire.split('\n').filter(l=>l.startsWith('data: {')).map(l=>JSON.parse(l.slice(6)).choices?.[0]?.delta.content||'').join('')};};
+ assert.equal((await text({...request,tools:streamTools,stream:true})).content,'fallback');
+ mode='stop';assert.equal((await text({...request,tools:streamTools,stream:true,stop:'STOP'})).content,'hello ');
+ mode='mismatch';assert.match((await text({...request,tools:streamTools,stream:true})).wire,/differs from its final response/);
+});

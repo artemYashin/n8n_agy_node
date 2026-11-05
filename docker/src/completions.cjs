@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { contentStream } = require('./content-stream.cjs');
 const Ajv = require('ajv');
 const ajv = new Ajv({ strict: false, allErrors: false, addUsedSchema: false });
 const Ajv2020 = require('ajv/dist/2020');
@@ -102,11 +103,13 @@ async function generate(input, backend, options, signal, onText) {
   });
   else if (json) prompt = JSON.stringify({ messages: conversation, response_format: { type: 'json_object' } });
   let emitted = '', sawDelta = false;
-  const live = Boolean(onText && !tools.length && !json);
+  const live = Boolean(onText && (!json || tools.length));
   const filter = stopFilter(stop, delta => { emitted += delta; onText?.(delta); });
+  let decoded = '';
+  const contentDecoder = tools.length ? contentStream(delta => { decoded += delta; filter.write(delta); }) : null;
   const result = await backend.runAgy({ executable: options.executable, model: body.model === 'agy-default' ? options.defaultModel : body.model,
     effort: body.reasoning_effort, timeoutMs: options.timeoutMs, maxOutputBytes: 16 * 1024 * 1024,
-    onText: live ? delta => { sawDelta = true; filter.write(delta); } : undefined,
+    onText: live ? delta => { sawDelta = true; if (contentDecoder) contentDecoder.write(delta); else filter.write(delta); } : undefined,
   }, prompt, system, signal);
   let content = result.response;
   if (typeof content !== 'string') throw new ApiError(502, 'Agy returned an invalid response.', null, 'upstream_error');
@@ -125,7 +128,16 @@ async function generate(input, backend, options, signal, onText) {
   if (json && !tools.length) {
     try { if (!object(JSON.parse(content))) throw Error(); } catch { throw new ApiError(502, 'Agy returned invalid JSON.', null, 'upstream_error'); }
   }
-  if (live) { if (!sawDelta) filter.write(content); filter.end(); content = emitted; }
+  if (live) {
+    if (contentDecoder) {
+      contentDecoder.end();
+      // The final parsed envelope is authoritative. Emit only the missing tail;
+      // never duplicate text, and fail rather than silently send inconsistent text.
+      if (!content.startsWith(decoded)) throw new ApiError(502, 'Agy streamed text that differs from its final response.', null, 'upstream_error');
+      filter.write(content.slice(decoded.length));
+    } else if (!sawDelta) filter.write(content);
+    filter.end(); content = emitted;
+  }
   else if (!tool_calls.length && stop.length) {
     const hits = stop.map(s => content.indexOf(s)).filter(n => n >= 0);
     if (hits.length) content = content.slice(0, Math.min(...hits));
