@@ -1,5 +1,6 @@
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolveExecutable, launchError } from '../shared/runtime.js';
 
 const execFileAsync = promisify(execFile);
 type Login = {
@@ -41,10 +42,11 @@ export function parseLoginUrl(text: string): string | undefined {
 
 export async function startLogin(owner: string, executable = 'agy', lifetimeMs = 10 * 60_000): Promise<{ authorizationUrl: string; expiresInSeconds: number }> {
   if (!owner) throw new Error('Save and select an Agy CLI Account credential first.');
+  const resolved = await resolveExecutable(executable);
   if (active && active.owner !== owner) throw new Error('Another credential is signing in on this server. Finish or cancel that sign-in first.');
   if (active?.submitting) throw new Error('Sign-in is already being completed. Wait for it to finish.');
   if (active) kill(active);
-  const child = spawn(executable, ['acp', '--login'], {
+  const child = spawn(resolved, ['acp', '--login'], {
     shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
   });
   const login: Login = { owner, executable, child, submitting: false,
@@ -82,9 +84,9 @@ export async function startLogin(owner: string, executable = 'agy', lifetimeMs =
     child.stdout.on('data', consume);
     child.stderr.on('data', consume);
     child.stdin.on('error', () => { /* close handles a rejected/closed login session */ });
-    child.on('error', () => {
+    child.on('error', (error) => {
       clearTimeout(startup);
-      fail('Cannot start Agy sign-in. Check the executable path and permissions on the n8n server.');
+      fail(`Cannot start Agy sign-in. ${launchError(error)}`);
     });
     child.once('close', () => {
       clearTimeout(startup);
@@ -122,11 +124,24 @@ export function cancelLogin(owner: string): boolean {
 }
 
 export async function checkConnection(executable = 'agy'): Promise<{ connected: true; models: string[] }> {
+  const models = await listModels(executable);
+  return { connected: true, models: models.map((model) => model.value) };
+}
+
+export function parseModels(stdout: string): Array<{ name: string; value: string }> {
+  return stdout.split(/\r?\n/).filter((line) => line.includes('\t')).map((line) => {
+    const [id, ...label] = line.split('\t');
+    return { value: id.trim(), name: label.join(' ').trim() || id.trim() };
+  }).filter((model) => Boolean(model.value));
+}
+
+export async function listModels(executable = 'auto'): Promise<Array<{ name: string; value: string }>> {
+  const resolved = await resolveExecutable(executable);
   try {
-    const { stdout } = await execFileAsync(executable, ['models'], { timeout: 20_000, maxBuffer: 256 * 1024, windowsHide: true });
-    const models = stdout.split(/\r?\n/).filter((line) => line.includes('\t')).map((line) => line.split('\t')[0].trim()).filter(Boolean);
+    const { stdout } = await execFileAsync(resolved, ['models'], { timeout: 20_000, maxBuffer: 256 * 1024, windowsHide: true });
+    const models = parseModels(stdout);
     if (!models.length) throw new Error('No models');
-    return { connected: true, models };
+    return models;
   } catch {
     // Never forward CLI output: authentication failures can include sensitive data.
     throw new Error('Cannot list Agy models. Check the executable path, network, and saved sign-in. Use Agy Account → Start Sign-In to connect.');

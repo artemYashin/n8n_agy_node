@@ -37,3 +37,23 @@ test('chat model uses credential executable without copying its authorization co
   assert.equal(supplied.response.cliOptions.executable, executable);
   assert.doesNotMatch(JSON.stringify(supplied.response.cliOptions), /MUST-NOT/);
 });
+
+test('model picker loads account models and filters by display name or ID', async () => {
+  const search = new AgyChatModel().methods.listSearch.searchModels;
+  const ctx = {
+    getNodeParameter: (name, fallback) => name === 'authentication' ? 'account' : fallback,
+    getCredentials: async () => ({ executable }),
+  };
+  assert.deepEqual((await search.call(ctx, 'Test Model')).results, [{ name: 'Test Model', value: 'test-model' }]);
+  assert.equal((await search.call(ctx, 'test-model')).results.length, 1);
+  assert.deepEqual((await search.call(ctx, 'nonexistent')).results, []);
+});
+
+test('model selection accepts list, manual ID, and legacy string values', async () => {
+  for (const selection of ['legacy-model', { mode: 'list', value: 'list-model' }, { mode: 'id', value: 'manual-model' }]) {
+    const supplied = await new AgyChatModel().supplyData.call({
+      getNodeParameter: (name, _index, fallback) => name === 'model' ? selection : fallback,
+    }, 0);
+    assert.equal(supplied.response.cliOptions.model, typeof selection === 'string' ? selection : selection.value);
+  }
+});

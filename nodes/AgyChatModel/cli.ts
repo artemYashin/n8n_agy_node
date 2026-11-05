@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resolveExecutable, launchError } from '../shared/runtime.js';
 
 export interface CliOptions {
   executable?: string;
@@ -28,6 +29,8 @@ export async function runAgy(
   signal?: AbortSignal,
 ): Promise<AgyResult> {
   signal?.throwIfAborted();
+  const executable = await resolveExecutable(options.executable);
+  signal?.throwIfAborted();
   const directory = await mkdtemp(join(tmpdir(), 'n8n-agy-'));
   try {
     const agents = join(directory, '.agents', 'agents');
@@ -47,7 +50,7 @@ export async function runAgy(
     if (options.effort) args.push(`--effort=${options.effort}`);
     signal?.throwIfAborted();
     return await new Promise<AgyResult>((resolve, reject) => {
-      const child = spawn(options.executable || 'agy', args, {
+      const child = spawn(executable, args, {
         cwd: directory, shell: false, windowsHide: true,
         detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
       });
@@ -97,7 +100,7 @@ export async function runAgy(
       });
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-4000); });
-      child.on('error', (error) => { failure = new Error(`Cannot start agy: ${error.message}`); });
+      child.on('error', (error) => { failure = new Error(`Cannot start agy: ${launchError(error)}`); });
       child.stdin.on('error', (error: NodeJS.ErrnoException) => {
         if (error.code !== 'EPIPE') fail(error);
       });
