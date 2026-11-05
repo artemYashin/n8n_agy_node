@@ -1,0 +1,200 @@
+{
+  "name": "Agy \u2014 Generate and Send Telegram Image",
+  "nodes": [
+    {
+      "name": "Image Tool Input",
+      "id": "image-tool-input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "prompt",
+              "type": "string"
+            },
+            {
+              "name": "chat_id",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Validate Input",
+      "id": "validate-input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const { prompt, chat_id } = $input.first().json;\nif (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 16000) throw new Error('A non-empty image prompt (max 16000 characters) is required');\nif (!/^-?\\d+$/.test(String(chat_id))) throw new Error('A numeric Telegram chat_id from the trigger is required');\nreturn [{ json: { prompt, chat_id: String(chat_id) } }];"
+      }
+    },
+    {
+      "name": "Generate Image",
+      "id": "generate-image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.1.100:44455/v1/images/generations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'agy-image', prompt: $json.prompt, n: 1, response_format: 'b64_json' } }}",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "retryOnFail": false
+    },
+    {
+      "name": "Convert Image to File",
+      "id": "convert-image-to-file",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "data[0].b64_json",
+        "binaryPropertyName": "data",
+        "options": {
+          "fileName": "={{ $json.data[0].file_name }}",
+          "mimeType": "={{ $json.data[0].mime_type }}"
+        }
+      }
+    },
+    {
+      "name": "Send Photo",
+      "id": "send-photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendPhoto",
+        "chatId": "={{ $('Validate Input').first().json.chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "additionalFields": {}
+      },
+      "retryOnFail": false
+    },
+    {
+      "name": "Delivery Status",
+      "id": "delivery-status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst message = response.result ?? response;\nif (response.ok === false || !message.message_id) throw new Error('Telegram did not confirm photo delivery');\nreturn [{ json: { sent: true, message_id: message.message_id, message: 'The generated image was sent to the Telegram chat. Do not send it again.' } }];"
+      }
+    },
+    {
+      "name": "Setup",
+      "id": "setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        -280
+      ],
+      "parameters": {
+        "content": "## Import this workflow FIRST\n1. Generate Image: set your Agy server URL.\n2. Select a Header Auth credential: Authorization = Bearer YOUR_AGY_API_KEY.\n3. Send Photo: select your Telegram bot credential.\n4. Save; select this workflow in the main agent tool.\nNo automatic retries: a retry can create/send another image.",
+        "height": 240,
+        "width": 640
+      }
+    }
+  ],
+  "connections": {
+    "Image Tool Input": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Convert Image to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Image to File": {
+      "main": [
+        [
+          {
+            "node": "Send Photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Photo": {
+      "main": [
+        [
+          {
+            "node": "Delivery Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 360
+  },
+  "active": false,
+  "pinData": {}
+}

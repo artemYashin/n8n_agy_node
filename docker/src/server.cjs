@@ -5,6 +5,7 @@ const path = require('node:path');
 const { homedir } = require('node:os');
 const bridge = require('./bridge.ts');
 const { ApiError, validate, generate } = require('./completions.cjs');
+const { validateImage, runImage } = require('./images.cjs');
 
 class Queue {
   constructor(limit, capacity) { this.limit = limit; this.capacity = capacity; this.active = 0; this.waiting = []; }
@@ -47,6 +48,8 @@ function createApp(config = {}) {
   if (typeof key !== 'string' || key.length < 16) throw new Error('AGY_API_KEY must contain at least 16 characters.');
   const options = { executable: config.executable || 'auto', defaultModel: config.defaultModel || '', timeoutMs: config.timeoutMs || 180000 };
   const queue = new Queue(config.concurrency || 2, config.maxQueue ?? 16);
+  const imageQueue = new Queue(config.imageConcurrency || 1, config.imageMaxQueue ?? 4);
+  const imageTimeoutMs = config.imageTimeoutMs || 240000;
   const controllers = new Set();
   let verification;
   const verificationStatus = () => verification && verification.expires > Date.now() ? verification.error : null;
@@ -57,7 +60,7 @@ function createApp(config = {}) {
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('referrer-policy', 'no-referrer');
     res.setHeader('content-security-policy', "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
-    let controller, timer, acquired = false;
+    let controller, timer, acquired = false, requestQueue = queue;
     try {
       const pathname = new URL(req.url, 'http://localhost').pathname;
       if (req.method === 'GET' && pathname === '/healthz') return json(res, 200, { status: 'ok' });
@@ -86,6 +89,19 @@ function createApp(config = {}) {
           return json(res, 200, { authenticated: true });
         }
         if (pathname === '/admin/login/cancel') return json(res, 200, { cancelled: backend.cancelLogin('http-admin') });
+      }
+      if (req.method === 'POST' && pathname === '/v1/images/generations') {
+        const input = validateImage(await readJson(req));
+        controller = new AbortController(); controllers.add(controller);
+        timer = setTimeout(() => controller.abort(new ApiError(504, 'Image generation timed out.', null, 'timeout')), imageTimeoutMs);
+        res.on('close', () => { if (!res.writableEnded) controller.abort(new ApiError(499, 'Client disconnected.')); });
+        requestQueue = imageQueue;
+        await requestQueue.acquire(controller.signal); acquired = true;
+        controller.signal.throwIfAborted();
+        const result = await (config.runImage || runImage)(input, { executable: options.executable, model: config.imageAgentModel || '', timeoutMs: imageTimeoutMs }, controller.signal);
+        controller.signal.throwIfAborted();
+        verification = undefined;
+        return json(res, 200, result);
       }
       if (req.method !== 'POST' || pathname !== '/v1/chat/completions') throw new ApiError(404, 'Unknown endpoint.', null, 'not_found');
       const input = validate(await readJson(req));
@@ -139,7 +155,7 @@ function createApp(config = {}) {
     } finally {
       if (timer) clearTimeout(timer);
       if (controller) controllers.delete(controller);
-      if (acquired) queue.release();
+      if (acquired) requestQueue.release();
     }
   });
   server.requestTimeout = 30000;
@@ -171,10 +187,12 @@ function positive(value, fallback, min = 1) {
 async function main() {
   const apiKey = await loadKey(process.env.AGY_DATA_DIR || path.join(homedir(), '.agy-api'), process.env.AGY_API_KEY);
   const server = createApp({ apiKey, executable: process.env.AGY_EXECUTABLE || 'auto', defaultModel: process.env.AGY_DEFAULT_MODEL,
+    imageAgentModel: process.env.AGY_IMAGE_AGENT_MODEL, imageTimeoutMs: positive(process.env.AGY_IMAGE_TIMEOUT_MS, 240000),
+    imageConcurrency: positive(process.env.AGY_IMAGE_CONCURRENCY, 1), imageMaxQueue: positive(process.env.AGY_IMAGE_MAX_QUEUE, 4, 0),
     concurrency: positive(process.env.AGY_MAX_CONCURRENCY, 2), maxQueue: positive(process.env.AGY_MAX_QUEUE, 16, 0), timeoutMs: positive(process.env.AGY_REQUEST_TIMEOUT_MS, 180000) });
   const port = positive(process.env.PORT, 8080);
   server.listen(port, '0.0.0.0', () => console.log(`Agy API listening on :${port}. Setup: http://localhost:${port}/ | API base: /v1`));
   for (const signal of ['SIGTERM','SIGINT']) process.once(signal, () => server.stop());
 }
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = { createApp, loadKey, Queue, validate, generate, prepareRuntime: bridge.resolveExecutable };
+module.exports = { runImage, collectImage: require('./images.cjs').collectImage, createApp, loadKey, Queue, validate, generate, prepareRuntime: bridge.resolveExecutable };
