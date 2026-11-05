@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-44455}:8080"
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-44455}:8080"
     environment:
       AGY_API_KEY: ${AGY_API_KEY:-}
       AGY_DEFAULT_MODEL: ${AGY_DEFAULT_MODEL:-}
