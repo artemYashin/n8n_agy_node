@@ -1,0 +1,30 @@
+{
+  "name": "n8n-nodes-agy-cli",
+  "version": "0.1.0",
+  "description": "Use the locally authenticated agy CLI as an n8n AI chat model",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+ssh://git@github.com/artemYashin/n8n_agy_node.git" },
+  "homepage": "https://github.com/artemYashin/n8n_agy_node#readme",
+  "bugs": { "url": "https://github.com/artemYashin/n8n_agy_node/issues" },
+  "keywords": ["n8n-community-node-package", "n8n", "agy", "ai", "chat-model"],
+  "main": "dist/nodes/AgyChatModel/AgyChatModel.node.js",
+  "files": ["dist", "examples", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.cjs",
+    "test:live": "npm run build && node scripts/live-test.cjs",
+    "prepack": "npm run build"
+  },
+  "engines": { "node": ">=22" },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "nodes": ["dist/nodes/AgyChatModel/AgyChatModel.node.js"]
+  },
+  "dependencies": { "@langchain/core": "1.2.8" },
+  "peerDependencies": { "n8n-workflow": "*" },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "n8n-workflow": "2.16.0",
+    "typescript": "~5.9.3"
+  }
+}
