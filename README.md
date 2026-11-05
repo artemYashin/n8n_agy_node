@@ -13,7 +13,17 @@ In Docker, install/authenticate `agy` inside the container or provide its execut
 
 ## Build and install
 
-This package is not yet published to npm. Build a local package:
+In self-hosted n8n, open **Settings → Community Nodes → Install** and enter `n8n-nodes-agy-cli`. Agy must also be installed on the n8n server; after installation, use the sign-in flow below.
+
+For manual installation, run this as the n8n service user, then restart n8n:
+
+```sh
+mkdir -p ~/.n8n/nodes
+cd ~/.n8n/nodes
+npm install n8n-nodes-agy-cli
+```
+
+To build a local package from source instead:
 
 ```sh
 git clone git@github.com:artemYashin/n8n_agy_node.git
