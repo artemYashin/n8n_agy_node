@@ -6,6 +6,7 @@ const path = require('node:path');
 const { imageSize } = require('image-size');
 const bridge = require('./bridge.ts');
 const { ApiError } = require('./completions.cjs');
+const { imageToolError } = require('./image-errors.cjs');
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -95,6 +96,11 @@ async function runImage(input, options, signal) {
           const event=JSON.parse(line);
           if(event.event==='init')addId(event.conversation_id);
           if(event.event==='step_update')for(const sub of event.step_update?.subagent_info?.subagents || [])addId(sub.conversation_id);
+          const step = event.step_update;
+          if (event.event === 'step_update' && step?.state === 'ERROR' && (step.tool_name === 'generate_image' || step.tool_info?.name === 'generate_image')) {
+            const detail = step.tool_info?.error;
+            fail(imageToolError(typeof detail?.message === 'string' ? detail.message : JSON.stringify(detail || {})));
+          }
           if(event.event==='result') { if(result)throw Error('Multiple results');result=event.result; }
           if(event.event==='error' || event.error)diagnostics=(diagnostics+JSON.stringify(event)).slice(-32768);
         } catch { diagnostics=(diagnostics+line).slice(-32768);fail(new Error('Invalid Agy image output')); }

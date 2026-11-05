@@ -39,7 +39,7 @@ function readJson(req, max = 1024 * 1024) {
 const hash = value => createHash('sha256').update(value).digest();
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(data)); };
 function errorEnvelope(error) {
-  return { error: { message: error.message, type: error.status < 500 ? 'invalid_request_error' : 'server_error', param: error.param || null, code: error.code || 'server_error', ...(error.verification_url ? { verification_url: error.verification_url } : {}) } };
+  return { error: { message: error.message, type: error.status < 500 ? 'invalid_request_error' : 'server_error', param: error.param || null, code: error.code || 'server_error', ...(error.retryAfter ? { retry_after_seconds: error.retryAfter } : {}), ...(error.verification_url ? { verification_url: error.verification_url } : {}) } };
 }
 
 function createApp(config = {}) {
@@ -150,7 +150,7 @@ function createApp(config = {}) {
       }
       if (!res.destroyed && !res.writableEnded) {
         if (res.headersSent) res.end(`data: ${JSON.stringify(errorEnvelope(error))}\n\ndata: [DONE]\n\n`);
-        else { if (error.status === 429) res.setHeader('retry-after', '5'); json(res, error.status, errorEnvelope(error)); }
+        else { if (error.status === 429 && (error.retryAfter || error.code === 'rate_limit_exceeded')) res.setHeader('retry-after', String(error.retryAfter || 5)); json(res, error.status, errorEnvelope(error)); }
       }
     } finally {
       if (timer) clearTimeout(timer);

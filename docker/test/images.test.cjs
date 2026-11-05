@@ -20,6 +20,12 @@ const brain=${JSON.stringify(brain)};let input='';process.stdin.on('data',c=>inp
  console.log(JSON.stringify({event:'init',conversation_id:id}));
  if(prompt==='hang'){setInterval(()=>{},1000);return;}
  if(prompt==='verify'){console.error('VALIDATION_REQUIRED https://accounts.google.com/verify?test=1');process.exitCode=1;return;}
+ if(['quota','rate-limit','tool-failed','tool-verify'].includes(prompt)){
+  const message=prompt==='quota' ? 'SECRET image failed to generate: 429 Too Many Requests, body: '+JSON.stringify({error:{code:429,status:'RESOURCE_EXHAUSTED',details:[{reason:'QUOTA_EXHAUSTED',metadata:{quotaResetDelay:'4h13m0.35055428s'}}]}}) : prompt==='rate-limit' ? '429 Too Many Requests SECRET' : prompt==='tool-verify' ? 'VALIDATION_REQUIRED https://accounts.google.com/verify?test=1' : 'SECRET unexpected provider failure';
+  console.log(JSON.stringify({event:'step_update',step_update:{state:'ERROR',tool_name:'generate_image',tool_info:{name:'generate_image',error:{type:'TOOL_ERROR',message}}}}));
+  console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'I could not generate an image',conversation_id:id}}));return;
+ }
+
  if(prompt!=='none')fs.writeFileSync(path.join(dir,'image.png'),Buffer.from(${JSON.stringify(png)},'base64'));
  console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'/outside/never-read.jpg',conversation_id:id}}));
 });`,{mode:0o755});
@@ -75,4 +81,24 @@ test('image queue is separate from chat and enforces timeout and capacity',async
 test('image verification errors use the existing account setup flow',async t=>{
  const {client}=await api(t,async()=>{throw Error('VALIDATION_REQUIRED https://accounts.google.com/verify?test=1');});
  await assert.rejects(client.images.generate({prompt:'lake'}),e=>e.status===403 && e.code==='account_verification_required');
+});
+
+
+test('tool errors survive a nominally successful CLI result and never expose raw diagnostics',async t=>{
+ const {brain,executable}=await fake(t);
+ for(const [prompt,code,status] of [['quota','image_quota_exceeded',429],['rate-limit','image_rate_limit_exceeded',429],['tool-failed','image_generation_failed',502],['tool-verify','account_verification_required',undefined]]) {
+  await assert.rejects(runImage({prompt},{executable,brainRoot:brain,timeoutMs:2000}),e=>{
+   assert.equal(e.code,code);if(status)assert.equal(e.status,status);assert.ok(!e.message.includes('SECRET'));
+   if(prompt==='quota')assert.equal(e.retryAfter,15181);
+   return true;
+  });
+ }
+});
+test('image quota is returned as HTTP 429 with Retry-After and JSON retry delay',async t=>{
+ const {brain,executable}=await fake(t);
+ const {client}=await api(t,(input,options,signal)=>runImage(input,{...options,executable,brainRoot:brain},signal));
+ await assert.rejects(client.images.generate({prompt:'quota'}),e=>{
+  assert.equal(e.status,429);assert.equal(e.code,'image_quota_exceeded');assert.equal(e.headers.get('retry-after'),'15181');
+  assert.equal(e.error.retry_after_seconds,15181);assert.ok(!JSON.stringify(e.error).includes('SECRET'));return true;
+ });
 });

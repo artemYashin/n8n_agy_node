@@ -44,6 +44,7 @@ Expected: the sub-workflow sends a photo, then the agent sends a short text conf
 Troubleshooting:
 
 - `account_verification_required`: complete Google verification on the Agy setup page and retry.
+- `image_quota_exceeded` / `image_rate_limit_exceeded`: wait for the returned `retry_after_seconds` / `Retry-After` before retrying. Text models can still work when image quota is exhausted.
 - `image_not_generated`: Agy returned no valid image; no photo is sent.
 - `Unknown endpoint`: update/rebuild the Docker app; image generation requires this version.
 - Workflow not found: select the imported sub-workflow instead of `SELECT_IMAGE_WORKFLOW`.
