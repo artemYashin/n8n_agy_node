@@ -25,7 +25,7 @@ process.stdin.on('end', () => {
   if (model === 'bad-json') { console.log('invalid json'); return; }
   if (model === 'overflow') { console.log('x'.repeat(10000)); return; }
   if (model === 'error') { console.error('Authentication required'); process.exitCode = 1; return; }
-  const system = fs.readFileSync(path.join(process.cwd(), '.agents/agents/n8n-provider.md'), 'utf8');
+  const system = fs.readFileSync(path.join(process.cwd(), '.agents/agents/agy-provider.md'), 'utf8');
   const schema = system.includes('Available workflow tools:');
   const transcript = JSON.parse(prompt);
   let structured;

@@ -33,19 +33,19 @@ export async function runAgy(
   signal?.throwIfAborted();
   const executable = await resolveExecutable(options.executable);
   signal?.throwIfAborted();
-  const directory = await mkdtemp(join(tmpdir(), 'n8n-agy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'agy-workspace-'));
   try {
     const agents = join(directory, '.agents', 'agents');
     await mkdir(agents, { recursive: true });
-    await writeFile(join(agents, 'n8n-provider.md'), [
-      '---', 'name: n8n-provider', 'description: Chat model adapter for n8n',
+    await writeFile(join(agents, 'agy-provider.md'), [
+      '---', 'name: agy-provider', 'description: Chat model adapter',
       'mainAgent: true', 'subagent: false', 'tools: []', '---',
       '# System Prompt', systemPrompt,
     ].join('\n'), { mode: 0o600 });
     const timeout = options.timeoutMs ?? 120_000;
     if (!Number.isFinite(timeout) || timeout < 1) throw new Error('Timeout must be positive');
     const args = [
-      '--agent=n8n-provider', '--input-format=stream-json', '--output-format=stream-json',
+      '--agent=agy-provider', '--input-format=stream-json', '--output-format=stream-json',
       '--disable-slash-commands', `--print-timeout=${timeout}ms`,
     ];
     if (options.model) args.push(`--model=${options.model}`);
