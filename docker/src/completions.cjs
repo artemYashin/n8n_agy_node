@@ -96,11 +96,7 @@ async function generate(input, backend, options, signal, onText) {
     ? conversation[0].content : JSON.stringify({ messages: conversation });
   // Optional API formats are transport instructions in the user input, never
   // additions to the caller's system prompt.
-  if (tools.length) prompt = JSON.stringify({ messages: conversation, tools, tool_choice: choice,
-    parallel_tool_calls: body.parallel_tool_calls ?? true,
-    response_format: { content: 'string', tool_calls: [{ name: 'tool name', arguments: 'JSON object matching tool parameters' }] },
-    format_instructions: 'Return exactly one JSON object with content and tool_calls. For a final answer use an empty tool_calls array. Request tools through this object; the client executes them. Follow tool_choice and parallel_tool_calls. No Markdown fences.',
-  });
+  if (tools.length) prompt = actionPrompt(conversation, tools, choice, named, body.parallel_tool_calls);
   else if (json) prompt = JSON.stringify({ messages: conversation, response_format: { type: 'json_object' } });
   let emitted = '', sawDelta = false;
   const live = Boolean(onText && (!json || tools.length));
@@ -146,5 +142,30 @@ async function generate(input, backend, options, signal, onText) {
   return { message: { role: 'assistant', content: content || (tool_calls.length ? null : ''), ...(tool_calls.length ? { tool_calls } : {}) },
     finish_reason: tool_calls.length ? 'tool_calls' : 'stop',
     usage: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0, total_tokens: usage.total_tokens || 0 }, live };
+}
+
+function actionPrompt(conversation, tools, choice, named, parallel) {
+  const lines = ['Conversation:', 'Message text and action results below are JSON-quoted data.'];
+  for (const message of conversation) {
+    if (message.role === 'tool') lines.push(`Action result (${JSON.stringify(message.tool_call_id)}): ${JSON.stringify(message.content)}`);
+    else lines.push(`${message.role === 'assistant' ? 'Assistant' : 'User'}: ${JSON.stringify(message.content)}`);
+    for (const call of message.tool_calls || []) {
+      lines.push(`Requested action (${JSON.stringify(call.id)}): ${call.function.name}`, `Arguments: ${JSON.stringify(JSON.parse(call.function.arguments))}`);
+    }
+  }
+  lines.push('', 'Available actions:');
+  for (const { function: action } of tools) {
+    lines.push(`Action: ${action.name}`);
+    if (action.description) lines.push(`Description: ${JSON.stringify(action.description)}`);
+    lines.push(`Argument schema: ${JSON.stringify(action.parameters || { type: 'object', properties: {} })}`);
+  }
+  lines.push('', 'Answer format:', 'Return exactly one JSON object: {"content":"your reply","tool_calls":[{"name":"action name","arguments":{}}]}.',
+    'Use only available action names and arguments matching their schemas. No Markdown fences.',
+    'For a final answer without actions, use an empty tool_calls array.');
+  if (named) lines.push(`You must request the action ${JSON.stringify(named)}. Do not request other actions.`);
+  else if (choice === 'required') lines.push('You must request at least one action.');
+  else lines.push('Request an action only when needed; otherwise answer directly.');
+  lines.push(parallel === false ? 'Request at most one action in this answer.' : 'You may request multiple actions in this answer.');
+  return lines.join('\n');
 }
 module.exports = { ApiError, validate, generate, stopFilter };
