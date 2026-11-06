@@ -6,6 +6,7 @@ const { homedir } = require('node:os');
 const bridge = require('./bridge.ts');
 const { ApiError, validate, generate } = require('./completions.cjs');
 const { validateImage, runImage } = require('./images.cjs');
+const { logRequest } = require('./request-log.cjs');
 
 class Queue {
   constructor(limit, capacity) { this.limit = limit; this.capacity = capacity; this.active = 0; this.waiting = []; }
@@ -56,6 +57,7 @@ function createApp(config = {}) {
   const publicDir = config.publicDir || process.env.AGY_PUBLIC_DIR || path.join(__dirname, '../public');
   const server = http.createServer(async (req, res) => {
     const requestId = `req_${randomUUID()}`;
+    if (config.logRequests !== false) logRequest(req, res, requestId, config.requestLogger);
     res.setHeader('x-request-id', requestId);
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('referrer-policy', 'no-referrer');
@@ -187,6 +189,7 @@ function positive(value, fallback, min = 1) {
 async function main() {
   const apiKey = await loadKey(process.env.AGY_DATA_DIR || path.join(homedir(), '.agy-api'), process.env.AGY_API_KEY);
   const server = createApp({ apiKey, executable: process.env.AGY_EXECUTABLE || 'auto', defaultModel: process.env.AGY_DEFAULT_MODEL,
+    logRequests: process.env.AGY_LOG_REQUESTS !== 'false',
     imageAgentModel: process.env.AGY_IMAGE_AGENT_MODEL, imageTimeoutMs: positive(process.env.AGY_IMAGE_TIMEOUT_MS, 240000),
     imageConcurrency: positive(process.env.AGY_IMAGE_CONCURRENCY, 1), imageMaxQueue: positive(process.env.AGY_IMAGE_MAX_QUEUE, 4, 0),
     concurrency: positive(process.env.AGY_MAX_CONCURRENCY, 2), maxQueue: positive(process.env.AGY_MAX_QUEUE, 16, 0), timeoutMs: positive(process.env.AGY_REQUEST_TIMEOUT_MS, 180000) });

@@ -7,11 +7,38 @@ const key='test-key-123456789';
 const request={model:'agy-default',messages:[{role:'user',content:'Hello'}]};
 async function fixture(t,runAgy,extra={}) {
  const backend={runAgy,listModels:async()=>[{name:'Model',value:'model-1'}],cancelLogin:()=>true};
- const server=createApp({apiKey:key,backend,...extra}); server.listen(0,'127.0.0.1'); await once(server,'listening');
+ const server=createApp({apiKey:key,backend,logRequests:false,...extra}); server.listen(0,'127.0.0.1'); await once(server,'listening');
  t.after(()=>server.stop()); const base=`http://127.0.0.1:${server.address().port}`;
  return {base,client:new OpenAI({apiKey:key,baseURL:base+'/v1',maxRetries:0}),post:(body)=>fetch(base+'/v1/chat/completions',{method:'POST',headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},body:JSON.stringify(body)})};
 }
 const result=(response)=>({response,usage:{input_tokens:2,output_tokens:3,total_tokens:5}});
+test('request logs include original bodies and request IDs without auth secrets',async t=>{
+ const logs=[];
+ const {base,post}=await fixture(t,async()=>result('ok'),{logRequests:true,requestLogger:line=>logs.push(JSON.parse(line))});
+ const body={...request,messages:[{role:'system',content:'My system prompt'},...request.messages],stream:true};
+ const response=await post(body); await response.text();
+ assert.deepEqual(logs[0].body,body);
+ assert.equal(logs[0].request_id,response.headers.get('x-request-id'));
+ assert.equal(logs[0].path,'/v1/chat/completions');
+ const send=(route,body,authorized=true)=>fetch(base+route,{method:'POST',headers:{'content-type':'application/json',...(authorized?{authorization:`Bearer ${key}`}:{})},body});
+ await (await send('/admin/login/complete',JSON.stringify({code:'login-secret',nested:{api_key:'key-secret',refresh_token:'refresh-secret'}}))).text();
+ assert.equal(logs[1].body.code,'[REDACTED]');
+ assert.equal(logs[1].body.nested.api_key,'[REDACTED]');
+ assert.equal(logs[1].body.nested.refresh_token,'[REDACTED]');
+ await (await send('/unknown?token=query-secret',JSON.stringify({prompt:'rejected request'}),false)).text();
+ assert.equal(logs[2].path,'/unknown');
+ assert.equal(logs[2].body.prompt,'rejected request');
+ await (await send('/v1/chat/completions','{"token":"malformed-secret"')).text();
+ assert.equal(logs[3].body,'[omitted: invalid JSON or non-JSON body]');
+ await (await send('/v1/chat/completions',JSON.stringify({prompt:'x'.repeat(1024*1024)}))).text();
+ assert.equal(logs[4].body,'[omitted: body exceeds 1 MiB]');
+ const serialized=JSON.stringify(logs);
+ for(const secret of [key,'login-secret','key-secret','refresh-secret','query-secret','malformed-secret']) assert.ok(!serialized.includes(secret));
+});
+test('request logging can be disabled',async t=>{
+ const logs=[];const {post}=await fixture(t,async()=>result('ok'),{logRequests:false,requestLogger:line=>logs.push(line)});
+ await (await post(request)).text();assert.deepEqual(logs,[]);
+});
 test('health, setup, authentication, models and SDK completion',async t=>{
  const {base,client}=await fixture(t,async()=>result('Hello'));
  assert.equal((await fetch(base+'/healthz')).status,200);
